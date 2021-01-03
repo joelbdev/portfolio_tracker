@@ -1,30 +1,102 @@
-from concurrent.futures import ThreadPoolExecutor
-import concurrent.futures
-import json
-import time
-import urllib.request
-import finnhub
+import yfinance as yf
 import pandas as pd
+import time
 
-def call_API(ticker, timeout):
-    finnhub_client = finnhub.Client(api_key="bvkm7nn48v6vtohist0g")
-    response = finnhub_client.quote(ticker)
-    return response
+def read_portfolio(csv):
+    """
+    Read in a local csv file and create a list of tickers for submission to Yfinance API
+    Return: ticker_list
+    """
+    portfolio = pd.read_csv(f"./{csv}.csv", index_col=0)
+    ticker_list = []
+    for index, row in portfolio.iterrows():
+        ticker_list.append(row["ticker"])
+    return ticker_list, portfolio
 
-start = time.perf_counter()
-# stocklist = ["MMM", "ABT", "ABBV", "ABMD", "ACN", "ATVI", "ADBE", "AMD", "AAP", "AES", "AFL", "A", "APD", "AKAM", "ALK", "ALB", "ARE", "ALXN", "ALGN", "ALLE", "LNT", "ALL", "GOOGL", "GOOG", "MO", "AMZN", "AMCR", "AEE", "AAL", "AEP", "AXP", "AIG", "AMT", "AWK", "AMP", "ABC", "AME", "AMGN", "APH", "ADI", "ANSS", "ANTM", "AON", "AOS", "APA", "AAPL", "AMAT", "APTV", "ADM", "ANET", "AJG", "AIZ", "T", "ATO", "ADSK", "ADP", "AZO", "AVB", "AVY", "BKR", "BLL", "BAC", "BK", "BAX", "BDX", "BRK.B", "BBY", "BIO", "BIIB", "BLK", "BA", "BKNG", "BWA", "BXP", "BSX", "BMY", "AVGO", "BR", "BF.B", "CHRW", "COG", "CDNS", "CPB", "COF", "CAH", "KMX", "CCL", "CARR", "CTLT", "CAT", "CBOE", "CBRE", "CDW", "CE", "CNC", "CNP", "CERN", "CF", "SCHW", "CHTR", "CVX", "CMG", "CB", "CHD", "CI", "CINF", "CTAS", "CSCO", "C", "CFG", "CTXS", "CLX", "CME", "CMS", "KO", "CTSH", "CL", "CMCSA", "CMA", "CAG", "CXO", "COP", "ED", "STZ", "COO", "CPRT", "GLW", "CTVA", "COST", "CCI", "CSX", "CMI", "CVS", "DHI", "DHR", "DRI", "DVA", "DE", "DAL", "XRAY", "DVN", "DXCM", "FANG", "DLR", "DFS", "DISCA", "DISCK", "DISH", "DG", "DLTR", "D", "DPZ", "DOV", "DOW", "DTE", "DUK", "DRE", "DD", "DXC", "EMN", "ETN", "EBAY", "ECL", "EIX", "EW", "EA", "EMR", "ETR", "EOG", "EFX", "EQIX", "EQR", "ESS", "EL", "ETSY", "EVRG", "ES", "RE", "EXC", "EXPE", "EXPD", "EXR", "XOM", "FFIV", "FB", "FAST", "FRT", "FDX", "FIS", "FITB", "FE", "FRC", "FISV", "FLT", "FLIR", "FLS", "FMC", "F", "FTNT", "FTV", "FBHS", "FOXA", "FOX", "BEN", "FCX", "GPS", "GRMN", "IT", "GD", "GE", "GIS", "GM", "GPC", "GILD", "GL", "GPN", "GS", "GWW", "HAL", "HBI", "HIG", "HAS", "HCA", "PEAK", "HSIC", "HSY", "HES", "HPE", "HLT", "HFC", "HOLX", "HD", "HON", "HRL", "HST", "HWM", "HPQ", "HUM", "HBAN", "HII", "IEX", "IDXX", "INFO", "ITW", "ILMN", "INCY", "IR", "INTC", "ICE", "IBM", "IP", "IPG", "IFF", "INTU", "ISRG", "IVZ", "IPGP", "IQV", "IRM", "JKHY", "J", "JBHT", "SJM", "JNJ", "JCI", "JPM", "JNPR", "KSU", "K", "KEY", "KEYS", "KMB", "KIM", "KMI", "KLAC", "KHC", "KR", "LB", "LHX", "LH", "LRCX", "LW", "LVS", "LEG", "LDOS", "LEN", "LLY", "LNC", "LIN", "LYV", "LKQ", "LMT", "L", "LOW", "LUMN", "LYB", "MTB", "MRO", "MPC", "MKTX", "MAR", "MMC", "MLM"]
-stocklist = ["MMM", "ABT", "ABBV", "ABMD", "ACN", "ATVI", "ADBE", "AMD", "AAP"]
-results = {}
-df = pd.DataFrame(columns=["ticker", "price"])
-with ThreadPoolExecutor(max_workers=8) as executor:
-    future_to_url = {executor.submit(call_API, stock, 60): stock for stock in stocklist}
-    for future in concurrent.futures.as_completed(future_to_url):
-        url = future_to_url[future]
-        try:
-            data = future.result()
-            print(data)
-        except Exception as e:
-            print(f"{url} generated an exception: {e}")
-print(results)
+def get_stock_price(tickerlist):
+    '''
+    Takes a list of tickers and fetches the price of each stock from the Yfinance API
+    Return: a Pandas dataframe with the ticker as the index and the price in the column
+    '''
+    price = yf.download(tickerlist, threads=True, period='1d', interval="1d")
+    price_df = price['Adj Close']
+    price_df = price_df.transpose()
+    price_df.columns = ['price', 'price1']
+    return price_df
+
+def get_stock_dividend(tickerlist):
+    '''
+    Get the annual dividend from Yfinance
+    Return: a Pandas dataframe with the ticker as the index and the dividend in the column
+    '''
+    dividend_dict = dict()
+    for ticker in tickerlist:
+        price = yf.Ticker(ticker)
+        dividend_dict[ticker] = price.info['dividendRate']
+    dividend_df = pd.DataFrame.from_dict(dividend_dict,orient='index', columns=['dividend'])
+    return dividend_df
+
+def construct_dataframe(portfolio = None, price_data = None, dividend_data = None):
+    '''
+    Create the final dataframe to record the new stock price and calculate profit
+    Return: a Pandas dataframe with the final values
+    '''
+    frames = [portfolio, price_data, dividend_data]
+    final_df = pd.concat(frames, axis=1)
+    final_df = final_df.rename(columns={'price':'currentPrice'})
+    final_df = final_df.drop(['price1'], axis=1)
+    #create a new column with the new value of the stock
+    final_df = final_df.fillna(0)
+    final_df['value'] = final_df['quantity'].multiply(final_df['currentPrice'])
+    final_df['newValue'] = final_df['value'].add(final_df['dividend'])
+    final_df['profit%'] = final_df['value'].divide(final_df['purchaseValue'])
+
+    total = final_df.sum(axis=0)
+    new_value = int(total['newValue'])
+    current_value = int(total['currentValue'])
+    profit = new_value - current_value
+
+    new_df = final_df.drop(['purchaseValue', 'purchasePrice', 'currentValue'], axis=1)
+
+    def style_df_negative(val):
+        '''Helper function to change negative numbers red
+        IN PROGRESS'''
+        colour = 'red' if val < 1 else 'Black'
+        return 'colour: %s' % colour
+
+    new_df.style.format({"profit%": "{:.1%}"}) #figure out how to display the different as a %
+    # , subset=['profit%']       
+    # new_df = new_df.style.applyy(style_df_negative, subset=['profit%'])
+
+    return new_df, profit
+
+def dashboard(profit, final_df):
+    """TODO: Dashboard logic to go here"""
+    profit = profit
+
+    return None
+
+# Start of main function
+
+start = time.perf_counter() #start a performance timer
+
+ticker_list = []
+ticker_list, portfolio_df = read_portfolio("portfolio")
+price_df = get_stock_price(ticker_list)
+dividend_df = get_stock_dividend(ticker_list)
+final_df, profit = construct_dataframe(portfolio_df, price_df, dividend_df)
+
+##########PRINT DEUBBING##########
+print(final_df)
+print(profit)
+##################################
+
 finish = time.perf_counter()
-print(finish - start)
+print(finish - start) #time program execution time
+
+"""
+TODO: sys arguments for whether to find price or dividdend or both?
+TODO: dashboard, biggest winner, biggest loser, total profit?
+TODO: tax?
+TODO: output to CSV
+"""
